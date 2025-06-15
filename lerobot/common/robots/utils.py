@@ -11,7 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from threading import Thread
+import time
+from sensor_msgs.msg import Image
+import rclpy.qos
+from threading import Thread
+from cv_bridge import CvBridge
 
+import rclpy
 import logging
 from pprint import pformat
 
@@ -56,6 +63,16 @@ def make_robot_from_config(config: RobotConfig, teleop=None) -> Robot:
                 rclpy.init()
                 self.node = rclpy.create_node("so101_follower")
                 self.publisher = self.node.create_publisher(Float64MultiArray, '/base/position_controller/commands', 10)
+                self.subscriber = self.node.create_subscription(Image, '/base/gripper_camera_image', self.image_callback, rclpy.qos.qos_profile_sensor_data)
+                self.cur_img = None
+                self.bridge = CvBridge()
+                t = Thread(target=rclpy.spin, args=(self.node,))
+                t.start()
+
+            def image_callback(self, msg):
+                self.cur_img = self.bridge.imgmsg_to_cv2(msg)
+                # remove 4th channel 
+                self.cur_img = self.cur_img[:, :, :3]
 
             def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
                 joints = Joints(
@@ -63,27 +80,25 @@ def make_robot_from_config(config: RobotConfig, teleop=None) -> Robot:
                     shoulder_lift=action['shoulder_lift.pos'] * 0.0279253,
                     elbow_flex=action['elbow_flex.pos'] * 0.0165806,
                     wrist_flex=action['wrist_flex.pos'] * 0.01658065,
-                    wrist_roll=action['wrist_roll.pos'] * 0.0174533,
+                    wrist_roll=action['wrist_roll.pos'] * 0.0174533*2,
                     gripper=action['gripper.pos'] * 0.01919863,
                 )
                 position_command = Float64MultiArray()
                 position_command.data = [joints.shoulder_pan, joints.shoulder_lift, joints.elbow_flex, joints.wrist_flex, joints.wrist_roll, joints.gripper]
                 print(f'Publishing: {joints.model_dump_json()}')
                 self.publisher.publish(position_command)
+                return action
 
             def get_observation(self) -> dict[str, Any]:
+                while self.cur_img is None:
+                    time.sleep(0.1)
                 obs_dict = self.leader.get_action()
-                width = 640
-                height = 480
+                for cam_key, cam in self.cameras.items():
+                    obs_dict[cam_key] = self.cur_img
 
-                black_image = np.zeros((height, width, 3), dtype=np.uint8)
-                obs_dict['up'] = black_image
-                obs_dict['side'] = black_image
-                # TODO connect to ros2 camera
                 return obs_dict
 
             def connect(self):
-                # TODO connect to ros2 camera
                 pass
 
         return SO101FollowerROS2(teleop, config)
