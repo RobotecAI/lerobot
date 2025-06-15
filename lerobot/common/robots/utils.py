@@ -16,11 +16,25 @@ import logging
 from pprint import pformat
 
 from lerobot.common.robots import RobotConfig
+import numpy as np
 
 from .robot import Robot
+from pydantic import BaseModel
+from typing import Any
 
+import rclpy
+from std_msgs.msg import Float64MultiArray
+class Joints(BaseModel):
+    shoulder_pan: float
+    shoulder_lift: float
+    elbow_flex: float
+    wrist_flex: float
+    wrist_roll: float
+    gripper: float
 
-def make_robot_from_config(config: RobotConfig) -> Robot:
+        
+
+def make_robot_from_config(config: RobotConfig, teleop=None) -> Robot:
     if config.type == "koch_follower":
         from .koch_follower import KochFollower
 
@@ -35,8 +49,45 @@ def make_robot_from_config(config: RobotConfig) -> Robot:
         return SO100FollowerEndEffector(config)
     elif config.type == "so101_follower":
         from .so101_follower import SO101Follower
+        class SO101FollowerROS2(SO101Follower):
+            def __init__(self, leader, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.leader = leader
+                rclpy.init()
+                self.node = rclpy.create_node("so101_follower")
+                self.publisher = self.node.create_publisher(Float64MultiArray, '/base/position_controller/commands', 10)
 
-        return SO101Follower(config)
+            def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
+                joints = Joints(
+                    shoulder_pan=action['shoulder_pan.pos'] * 0.009599315,
+                    shoulder_lift=action['shoulder_lift.pos'] * 0.0279253,
+                    elbow_flex=action['elbow_flex.pos'] * 0.0165806,
+                    wrist_flex=action['wrist_flex.pos'] * 0.01658065,
+                    wrist_roll=action['wrist_roll.pos'] * 0.0174533,
+                    gripper=action['gripper.pos'] * 0.01919863,
+                )
+                position_command = Float64MultiArray()
+                position_command.data = [joints.shoulder_pan, joints.shoulder_lift, joints.elbow_flex, joints.wrist_flex, joints.wrist_roll, joints.gripper]
+                print(f'Publishing: {joints.model_dump_json()}')
+                self.publisher.publish(position_command)
+
+            def get_observation(self) -> dict[str, Any]:
+                obs_dict = self.leader.get_action()
+                width = 640
+                height = 480
+
+                black_image = np.zeros((height, width, 3), dtype=np.uint8)
+                obs_dict['up'] = black_image
+                obs_dict['side'] = black_image
+                # TODO connect to ros2 camera
+                return obs_dict
+
+            def connect(self):
+                # TODO connect to ros2 camera
+                pass
+
+        return SO101FollowerROS2(teleop, config)
+
     elif config.type == "lekiwi":
         from .lekiwi import LeKiwi
 
