@@ -39,6 +39,12 @@ class Joints(BaseModel):
     wrist_roll: float
     gripper: float
 
+
+def map_value(value, from_min, from_max, to_min, to_max):
+    """Maps a value from one range to another."""
+    return (value - from_min) * (to_max - to_min) / (from_max - from_min) + to_min
+
+degrees_to_radians = np.pi / 180.0
         
 
 def make_robot_from_config(config: RobotConfig, teleop=None) -> Robot:
@@ -75,9 +81,12 @@ def make_robot_from_config(config: RobotConfig, teleop=None) -> Robot:
                 self.cur_img = self.cur_img[:, :, :3]
 
             def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
+                print(action)
                 joints = Joints(
-                    shoulder_pan=action['shoulder_pan.pos'] * 0.009599315,
-                    shoulder_lift=action['shoulder_lift.pos'] * 0.0279253,
+                    shoulder_pan=map_value(action['shoulder_pan.pos'], -100, 100, -110, 100) * degrees_to_radians, 
+                    #shoulder_pan=action['shoulder_pan.pos'] * 0.009599315,
+                    shoulder_lift=map_value(action['shoulder_lift.pos'], -100, 100, -100, 100) * degrees_to_radians, 
+                    #shoulder_lift=action['shoulder_lift.pos'] * 0.0279253,
                     elbow_flex=action['elbow_flex.pos'] * 0.0165806,
                     wrist_flex=action['wrist_flex.pos'] * 0.01658065,
                     wrist_roll=action['wrist_roll.pos'] * 0.0174533*2,
