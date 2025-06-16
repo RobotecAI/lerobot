@@ -268,8 +268,10 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
     # Load pretrained policy
     policy = None if cfg.policy is None else make_policy(cfg.policy, ds_meta=dataset.meta)
 
-    dataset.push_to_hub(tags=cfg.dataset.tags, private=cfg.dataset.private)
-    return
+    # Uncomment to submit dataset
+    #dataset.push_to_hub(tags=cfg.dataset.tags, private=cfg.dataset.private)
+    #return
+
     robot.connect()
     if teleop is not None:
         teleop.connect()

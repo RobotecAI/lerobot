@@ -31,6 +31,7 @@ from typing import Any
 
 import rclpy
 from std_msgs.msg import Float64MultiArray
+from sensor_msgs.msg import JointState
 class Joints(BaseModel):
     shoulder_pan: float
     shoulder_lift: float
@@ -70,10 +71,27 @@ def make_robot_from_config(config: RobotConfig, teleop=None) -> Robot:
                 self.node = rclpy.create_node("so101_follower")
                 self.publisher = self.node.create_publisher(Float64MultiArray, '/base/position_controller/commands', 10)
                 self.subscriber = self.node.create_subscription(Image, '/base/gripper_camera_image', self.image_callback, rclpy.qos.qos_profile_sensor_data)
+                self.joint_states_subscriber = self.node.create_subscription(JointState, '/base/joint_states', self.joint_states_callback, rclpy.qos.qos_profile_sensor_data)
+                self.joint_states = None
                 self.cur_img = None
                 self.bridge = CvBridge()
                 t = Thread(target=rclpy.spin, args=(self.node,))
                 t.start()
+
+            def joint_states_callback(self, msg):
+                INVERT_NORM = True
+                self.joint_states = {}
+                for name, position in zip(msg.name, msg.position):
+                    action_name = name.replace("base/", "") + ".pos"
+                    self.joint_states[action_name] = position
+                
+                if INVERT_NORM:
+                    self.joint_states['shoulder_pan.pos'] = map_value(self.joint_states['shoulder_pan.pos'] / degrees_to_radians, -110, 100, -100, 100)
+                    self.joint_states['shoulder_lift.pos'] = map_value(self.joint_states['shoulder_lift.pos'] / degrees_to_radians, -100, 100, -100, 100)
+                    self.joint_states['elbow_flex.pos'] = self.joint_states['elbow_flex.pos'] / 0.0165806
+                    self.joint_states['wrist_flex.pos'] = self.joint_states['wrist_flex.pos'] / 0.01658065
+                    self.joint_states['wrist_roll.pos'] = self.joint_states['wrist_roll.pos'] / (0.0174533 * 2)
+                    self.joint_states['gripper.pos'] = self.joint_states['gripper.pos'] / 0.01919863
 
             def image_callback(self, msg):
                 self.cur_img = self.bridge.imgmsg_to_cv2(msg)
@@ -99,9 +117,9 @@ def make_robot_from_config(config: RobotConfig, teleop=None) -> Robot:
                 return action
 
             def get_observation(self) -> dict[str, Any]:
-                while self.cur_img is None:
-                    time.sleep(0.1)
-                obs_dict = self.leader.get_action()
+                while self.cur_img is None or self.joint_states is None:
+                    rclpy.spin_once(self.node, timeout_sec=0.1)
+                obs_dict = self.joint_states.copy()
                 for cam_key, cam in self.cameras.items():
                     obs_dict[cam_key] = self.cur_img
 
