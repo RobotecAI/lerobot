@@ -70,7 +70,9 @@ def make_robot_from_config(config: RobotConfig, teleop=None) -> Robot:
                 rclpy.init()
                 self.node = rclpy.create_node("so101_follower")
                 self.publisher = self.node.create_publisher(Float64MultiArray, '/base/position_controller/commands', 10)
-                self.subscriber = self.node.create_subscription(Image, '/base/gripper_camera_image', self.image_callback, rclpy.qos.qos_profile_sensor_data)
+                qos_profile = rclpy.qos.QoSProfile(depth=10)
+                qos_profile.reliability = rclpy.qos.ReliabilityPolicy.RELIABLE
+                self.subscriber = self.node.create_subscription(Image, '/base/gripper_camera_image', self.image_callback, qos_profile)
                 self.joint_states_subscriber = self.node.create_subscription(JointState, '/base/joint_states', self.joint_states_callback, rclpy.qos.qos_profile_sensor_data)
                 self.joint_states = None
                 self.cur_img = None
