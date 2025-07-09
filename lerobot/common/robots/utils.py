@@ -120,7 +120,7 @@ def make_robot_from_config(config: RobotConfig, teleop=None) -> Robot:
 
             def get_observation(self) -> dict[str, Any]:
                 while self.cur_img is None or self.joint_states is None:
-                    rclpy.spin_once(self.node, timeout_sec=0.1)
+                    time.sleep(0.1)
                 obs_dict = self.joint_states.copy()
                 for cam_key, cam in self.cameras.items():
                     obs_dict[cam_key] = self.cur_img
